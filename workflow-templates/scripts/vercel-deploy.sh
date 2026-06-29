@@ -11,6 +11,9 @@ if [ -z "${RESOLVED_PROJECT_ID:-}" ] || [ -z "${VERCEL_TEAM_ID:-}" ]; then
   exit 1
 fi
 
+wait_seconds="${VERCEL_DEPLOY_WAIT_SECONDS:-600}"
+poll_interval="${VERCEL_DEPLOY_POLL_INTERVAL_SECONDS:-10}"
+
 mkdir -p .vercel
 jq -n \
   --arg orgId "$VERCEL_TEAM_ID" \
@@ -42,8 +45,48 @@ if [ "$deploy_code" -ne 0 ]; then
 fi
 
 if [ -z "$deployment_url" ]; then
-  echo "::warning::El deploy finalizo, pero no se pudo extraer la URL publica desde la salida de Vercel CLI."
-else
-  echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
-  echo "::notice::Deploy publicado en $deployment_url"
+  echo "::error::Vercel acepto el deploy, pero no se pudo extraer la URL publica desde la salida de Vercel CLI."
+  exit 1
 fi
+
+deployment_host="${deployment_url#https://}"
+deployment_host="${deployment_host#http://}"
+deployment_host="${deployment_host%%/*}"
+
+echo "::notice::Deployment creado en Vercel. Esperando estado READY: $deployment_url"
+
+elapsed=0
+while [ "$elapsed" -le "$wait_seconds" ]; do
+  deployment_response=$(mktemp)
+  http_code=$(curl -sS -o "$deployment_response" -w "%{http_code}" \
+    -H "Authorization: Bearer $VERCEL_TOKEN" \
+    "https://api.vercel.com/v13/deployments/$deployment_host?teamId=$VERCEL_TEAM_ID")
+
+  if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+    echo "::error::No se pudo consultar el estado del deployment en Vercel. HTTP $http_code"
+    cat "$deployment_response"
+    exit 1
+  fi
+
+  deployment_state=$(jq -r '.readyState // .state // .status // empty' "$deployment_response")
+  deployment_ready_substate=$(jq -r '.readySubstate // empty' "$deployment_response")
+  echo "Estado Vercel: ${deployment_state:-desconocido} ${deployment_ready_substate:+($deployment_ready_substate)}"
+
+  if [ "$deployment_state" = "READY" ]; then
+    echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
+    echo "::notice::Deploy publicado correctamente en $deployment_url"
+    exit 0
+  fi
+
+  if [ "$deployment_state" = "ERROR" ] || [ "$deployment_state" = "FAILED" ] || [ "$deployment_state" = "CANCELED" ]; then
+    echo "::error::El deployment de Vercel termino en estado $deployment_state."
+    cat "$deployment_response"
+    exit 1
+  fi
+
+  sleep "$poll_interval"
+  elapsed=$((elapsed + poll_interval))
+done
+
+echo "::error::Timeout esperando que Vercel confirme READY despues de ${wait_seconds}s."
+exit 1

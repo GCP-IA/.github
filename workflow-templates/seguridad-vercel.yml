@@ -163,7 +163,6 @@ jobs:
     outputs:
       project_id: ${{ steps.vercel_provisioning.outputs.project_id }}
       project_name: ${{ steps.vercel_provisioning.outputs.project_name }}
-      team_id: ${{ steps.vercel_provisioning.outputs.team_id }}
 
     steps:
       - name: Checkout del codigo
@@ -239,7 +238,7 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN || secrets.VERCEL_TOKEN_SECRET }}
           RESOLVED_PROJECT_ID: ${{ needs.vercel_provision.outputs.project_id }}
-          VERCEL_TEAM_ID: ${{ needs.vercel_provision.outputs.team_id }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID || secrets.VERCEL_ORG_ID }}
         run: bash .github/devsecops/scripts/vercel-deploy.sh
 
   notify_success:
@@ -272,7 +271,7 @@ jobs:
           VERCEL_DEPLOYMENT_URL: ${{ needs.vercel_deploy.outputs.deployment_url }}
           VERCEL_PROJECT_NAME: ${{ needs.vercel_provision.outputs.project_name }}
           VERCEL_PROJECT_ID: ${{ needs.vercel_provision.outputs.project_id }}
-          VERCEL_TEAM_ID: ${{ needs.vercel_provision.outputs.team_id }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID || secrets.VERCEL_ORG_ID }}
         run: bash .github/devsecops/scripts/send-alert.sh
 
   notify_failure:
@@ -311,5 +310,5 @@ jobs:
           VERCEL_DEPLOYMENT_URL: ${{ needs.vercel_deploy.outputs.deployment_url }}
           VERCEL_PROJECT_NAME: ${{ needs.vercel_provision.outputs.project_name }}
           VERCEL_PROJECT_ID: ${{ needs.vercel_provision.outputs.project_id }}
-          VERCEL_TEAM_ID: ${{ needs.vercel_provision.outputs.team_id }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID || secrets.VERCEL_ORG_ID }}
         run: bash .github/devsecops/scripts/send-alert.sh

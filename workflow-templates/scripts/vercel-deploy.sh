@@ -6,8 +6,13 @@ if [ -z "${VERCEL_TOKEN:-}" ]; then
   exit 1
 fi
 
-if [ -z "${RESOLVED_PROJECT_ID:-}" ] || [ -z "${VERCEL_TEAM_ID:-}" ]; then
-  echo "::error::No se recibio project_id/team_id desde el auto-aprovisionamiento de Vercel."
+if [ -z "${RESOLVED_PROJECT_ID:-}" ]; then
+  echo "::error::No se recibio project_id desde el auto-aprovisionamiento de Vercel."
+  exit 1
+fi
+
+if [ -z "${VERCEL_TEAM_ID:-}" ]; then
+  echo "::error::Falta configurar VERCEL_TEAM_ID o VERCEL_ORG_ID para el deploy en Vercel."
   exit 1
 fi
 

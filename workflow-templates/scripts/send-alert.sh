@@ -57,8 +57,10 @@ vercel_deployment_url="${VERCEL_DEPLOYMENT_URL:-}"
 vercel_project_name="${VERCEL_PROJECT_NAME:-}"
 vercel_project_id="${VERCEL_PROJECT_ID:-}"
 vercel_team_id="${VERCEL_TEAM_ID:-}"
+deployment_state="FAILED"
 
 if [ "$alert_type" = "success" ]; then
+  deployment_state="READY"
   subject="DevSecOps: despliegue exitoso en $ALERT_REPOSITORY"
   body="El workflow DevSecOps finalizo correctamente en $ALERT_REPOSITORY. Proyecto Vercel: $vercel_project_name ($vercel_project_id). URL: $vercel_deployment_url. Run: $ALERT_RUN_URL"
 else
@@ -74,6 +76,7 @@ payload=$(jq -n \
   --arg ref "$ALERT_REF" \
   --arg alert_type "$alert_type" \
   --arg status "$alert_status" \
+  --arg deployment_state "$deployment_state" \
   --arg alert_to "$security_alert_to" \
   --arg owner_email "$owner_email" \
   --arg owner_email_source "$owner_email_source" \
@@ -86,7 +89,7 @@ payload=$(jq -n \
   --arg vercel_project_name "$vercel_project_name" \
   --arg vercel_project_id "$vercel_project_id" \
   --arg vercel_team_id "$vercel_team_id" \
-  '{repository: $repository, actor: $actor, email: $email, workflow: $workflow, ref: $ref, run_url: $run_url, alert_type: $alert_type, type: $alert_type, status: $status, alert_to: $alert_to, owner_email: $owner_email, owner_email_source: $owner_email_source, commit_author_email: $commit_author_email, to: $to, vercel: {deployment_url: $vercel_deployment_url, project_name: $vercel_project_name, project_id: $vercel_project_id, team_id: $vercel_team_id}, deployment_url: $vercel_deployment_url, vercel_project_name: $vercel_project_name, vercel_project_id: $vercel_project_id, vercel_team_id: $vercel_team_id, emailMessage: {To: $email, Subject: $subject, Body: $body}}')
+  '{repository: $repository, actor: $actor, email: $email, workflow: $workflow, ref: $ref, run_url: $run_url, alert_type: $alert_type, type: $alert_type, status: $status, deployment_state: $deployment_state, alert_to: $alert_to, owner_email: $owner_email, owner_email_source: $owner_email_source, commit_author_email: $commit_author_email, to: $to, url: $vercel_deployment_url, URL: $vercel_deployment_url, vercel: {deployment_url: $vercel_deployment_url, project_name: $vercel_project_name, project_id: $vercel_project_id, team_id: $vercel_team_id}, deployment_url: $vercel_deployment_url, vercel_project_name: $vercel_project_name, vercel_project_id: $vercel_project_id, vercel_team_id: $vercel_team_id, emailMessage: {To: $email, Subject: $subject, Body: $body}}')
 
 response_file=$(mktemp)
 http_code=$(curl -sS -o "$response_file" -w "%{http_code}" \

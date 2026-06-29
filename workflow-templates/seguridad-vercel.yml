@@ -261,6 +261,7 @@ jobs:
         shell: bash
         env:
           SECURITY_ALERT_WEBHOOK_URL: ${{ secrets.SECURITY_ALERT_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ github.token }}
           ALERT_TYPE: success
           ALERT_STATUS: Exitoso
           ALERT_REPOSITORY: ${{ github.repository }}
@@ -299,6 +300,7 @@ jobs:
         shell: bash
         env:
           SECURITY_ALERT_WEBHOOK_URL: ${{ secrets.SECURITY_ALERT_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ github.token }}
           ALERT_TYPE: error
           ALERT_STATUS: Fallido
           ALERT_REPOSITORY: ${{ github.repository }}

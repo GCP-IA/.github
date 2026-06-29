@@ -10,14 +10,16 @@ repo_name="${ALERT_REPOSITORY#*/}"
 owner_user=""
 owner_email=""
 owner_email_source="missing"
-github_actor_email=""
 commit_author_email=""
 
 if [ -f ".github/devsecops-owner.json" ]; then
   owner_user=$(jq -r '.user // empty' .github/devsecops-owner.json)
   owner_email=$(jq -r '.email // empty' .github/devsecops-owner.json)
-  if [ -n "$owner_email" ]; then
+  if [ -n "$owner_email" ] && [ "$owner_email" != "null" ] && [[ "$owner_email" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
     owner_email_source=".github/devsecops-owner.json"
+  else
+    owner_email=""
+    owner_email_source="invalid_or_missing_devsecops_owner_json"
   fi
 fi
 
@@ -30,27 +32,6 @@ fi
 
 if [ -z "$owner_email" ]; then
   commit_author_email=$(git show -s --format=%ae HEAD 2>/dev/null || true)
-  github_user_response=$(mktemp)
-  github_headers=()
-  if [ -n "${GITHUB_TOKEN:-}" ]; then
-    github_headers=(-H "Authorization: Bearer $GITHUB_TOKEN")
-  fi
-  github_http_code=$(curl -sS -o "$github_user_response" -w "%{http_code}" \
-    "${github_headers[@]}" \
-    -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/users/$ALERT_ACTOR" || true)
-
-  if [ "$github_http_code" -ge 200 ] && [ "$github_http_code" -lt 300 ]; then
-    github_actor_email=$(jq -r '.email // empty' "$github_user_response")
-  fi
-
-  if [ -n "$github_actor_email" ] && [ "$github_actor_email" != "null" ]; then
-    owner_email="$github_actor_email"
-    owner_email_source="github_actor_public_email"
-  else
-    owner_email=""
-    owner_email_source="missing"
-  fi
 fi
 
 security_alert_to="${SECURITY_ALERT_DEFAULT_TO:-}"
@@ -60,9 +41,15 @@ if [ -z "$security_alert_to" ]; then
 fi
 
 if [ -n "$owner_email" ]; then
-  alert_recipients="${security_alert_to};${owner_email}"
+  alert_recipients="$owner_email"
 else
   alert_recipients="$security_alert_to"
+  owner_email="$security_alert_to"
+  if [ "$owner_email_source" = "missing" ]; then
+    owner_email_source="SECURITY_ALERT_DEFAULT_TO"
+  else
+    owner_email_source="${owner_email_source}->SECURITY_ALERT_DEFAULT_TO"
+  fi
 fi
 alert_type="${ALERT_TYPE:-error}"
 alert_status="${ALERT_STATUS:-Fallido}"
@@ -90,7 +77,6 @@ payload=$(jq -n \
   --arg alert_to "$security_alert_to" \
   --arg owner_email "$owner_email" \
   --arg owner_email_source "$owner_email_source" \
-  --arg github_actor_email "$github_actor_email" \
   --arg commit_author_email "$commit_author_email" \
   --arg email "$alert_recipients" \
   --arg to "$alert_recipients" \
@@ -100,7 +86,7 @@ payload=$(jq -n \
   --arg vercel_project_name "$vercel_project_name" \
   --arg vercel_project_id "$vercel_project_id" \
   --arg vercel_team_id "$vercel_team_id" \
-  '{repository: $repository, actor: $actor, email: $email, workflow: $workflow, ref: $ref, run_url: $run_url, alert_type: $alert_type, type: $alert_type, status: $status, alert_to: $alert_to, owner_email: $owner_email, owner_email_source: $owner_email_source, github_actor_email: $github_actor_email, commit_author_email: $commit_author_email, to: $to, vercel: {deployment_url: $vercel_deployment_url, project_name: $vercel_project_name, project_id: $vercel_project_id, team_id: $vercel_team_id}, deployment_url: $vercel_deployment_url, vercel_project_name: $vercel_project_name, vercel_project_id: $vercel_project_id, vercel_team_id: $vercel_team_id, emailMessage: {To: $email, Subject: $subject, Body: $body}}')
+  '{repository: $repository, actor: $actor, email: $email, workflow: $workflow, ref: $ref, run_url: $run_url, alert_type: $alert_type, type: $alert_type, status: $status, alert_to: $alert_to, owner_email: $owner_email, owner_email_source: $owner_email_source, commit_author_email: $commit_author_email, to: $to, vercel: {deployment_url: $vercel_deployment_url, project_name: $vercel_project_name, project_id: $vercel_project_id, team_id: $vercel_team_id}, deployment_url: $vercel_deployment_url, vercel_project_name: $vercel_project_name, vercel_project_id: $vercel_project_id, vercel_team_id: $vercel_team_id, emailMessage: {To: $email, Subject: $subject, Body: $body}}')
 
 response_file=$(mktemp)
 http_code=$(curl -sS -o "$response_file" -w "%{http_code}" \

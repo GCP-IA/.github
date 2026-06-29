@@ -23,11 +23,15 @@ if [ -z "$owner_user" ]; then
 fi
 
 if [ -z "$owner_email" ]; then
-  owner_email="${owner_user}@casapellas.com"
+  owner_email=""
 fi
 
 security_alert_to="ciberseguridad@casapellas.com"
-alert_recipients="${security_alert_to};${owner_email}"
+if [ -n "$owner_email" ]; then
+  alert_recipients="${security_alert_to};${owner_email}"
+else
+  alert_recipients="$security_alert_to"
+fi
 alert_type="${ALERT_TYPE:-error}"
 alert_status="${ALERT_STATUS:-Fallido}"
 vercel_deployment_url="${VERCEL_DEPLOYMENT_URL:-}"

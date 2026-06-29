@@ -53,7 +53,12 @@ if [ -z "$owner_email" ]; then
   fi
 fi
 
-security_alert_to="ciberseguridad@casapellas.com"
+security_alert_to="${SECURITY_ALERT_DEFAULT_TO:-}"
+if [ -z "$security_alert_to" ]; then
+  echo "::error::SECURITY_ALERT_DEFAULT_TO no configurado; no se puede calcular el destinatario base de la alerta."
+  exit 1
+fi
+
 if [ -n "$owner_email" ]; then
   alert_recipients="${security_alert_to};${owner_email}"
 else

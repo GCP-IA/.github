@@ -8,8 +8,6 @@ if [ -f "middleware.js" ] || [ -f "middleware.ts" ]; then
 fi
 
 cat > middleware.js <<'EOF'
-import { NextResponse } from 'next/server';
-
 const CORPORATE_CIDRS = [
   '181.119.102.240/29',
   '186.33.30.96/27',
@@ -61,22 +59,27 @@ function isCorporateIp(ip) {
   });
 }
 
-export function middleware(request) {
+export default function middleware(request) {
   const clientIp =
     request.headers.get('x-real-ip') ||
     request.headers.get('x-forwarded-for') ||
     '';
 
   if (isCorporateIp(clientIp)) {
-    return NextResponse.next();
+    return;
   }
 
-  return NextResponse.json(
-    {
+  return new Response(
+    JSON.stringify({
       error: 'Security Gate: Acceso Denegado',
       message: 'Este sistema es de uso exclusivo para la red corporativa de Grupo Casa Pellas.',
-    },
-    { status: 403 }
+    }),
+    {
+      status: 403,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+      },
+    }
   );
 }
 

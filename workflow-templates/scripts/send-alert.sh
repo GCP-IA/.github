@@ -28,6 +28,20 @@ fi
 
 security_alert_to="ciberseguridad@casapellas.com"
 alert_recipients="${security_alert_to};${owner_email}"
+alert_type="${ALERT_TYPE:-error}"
+alert_status="${ALERT_STATUS:-Fallido}"
+vercel_deployment_url="${VERCEL_DEPLOYMENT_URL:-}"
+vercel_project_name="${VERCEL_PROJECT_NAME:-}"
+vercel_project_id="${VERCEL_PROJECT_ID:-}"
+vercel_team_id="${VERCEL_TEAM_ID:-}"
+
+if [ "$alert_type" = "success" ]; then
+  subject="DevSecOps: despliegue exitoso en $ALERT_REPOSITORY"
+  body="El workflow DevSecOps finalizo correctamente en $ALERT_REPOSITORY. Proyecto Vercel: $vercel_project_name ($vercel_project_id). URL: $vercel_deployment_url. Run: $ALERT_RUN_URL"
+else
+  subject="Alerta DevSecOps: fallo en $ALERT_REPOSITORY"
+  body="El workflow DevSecOps fallo en $ALERT_REPOSITORY. Run: $ALERT_RUN_URL"
+fi
 
 payload=$(jq -n \
   --arg repository "$ALERT_REPOSITORY" \
@@ -35,11 +49,19 @@ payload=$(jq -n \
   --arg workflow "$ALERT_WORKFLOW" \
   --arg run_url "$ALERT_RUN_URL" \
   --arg ref "$ALERT_REF" \
+  --arg alert_type "$alert_type" \
+  --arg status "$alert_status" \
   --arg alert_to "$security_alert_to" \
   --arg owner_email "$owner_email" \
   --arg email "$alert_recipients" \
   --arg to "$alert_recipients" \
-  '{repository: $repository, actor: $actor, email: $email, workflow: $workflow, ref: $ref, run_url: $run_url, status: "Fallido", alert_to: $alert_to, owner_email: $owner_email, to: $to, emailMessage: {To: $email, Subject: ("Alerta DevSecOps: fallo en " + $repository), Body: ("El workflow DevSecOps fallo en " + $repository + ". Run: " + $run_url)}}')
+  --arg subject "$subject" \
+  --arg body "$body" \
+  --arg vercel_deployment_url "$vercel_deployment_url" \
+  --arg vercel_project_name "$vercel_project_name" \
+  --arg vercel_project_id "$vercel_project_id" \
+  --arg vercel_team_id "$vercel_team_id" \
+  '{repository: $repository, actor: $actor, email: $email, workflow: $workflow, ref: $ref, run_url: $run_url, alert_type: $alert_type, type: $alert_type, status: $status, alert_to: $alert_to, owner_email: $owner_email, to: $to, vercel: {deployment_url: $vercel_deployment_url, project_name: $vercel_project_name, project_id: $vercel_project_id, team_id: $vercel_team_id}, deployment_url: $vercel_deployment_url, vercel_project_name: $vercel_project_name, vercel_project_id: $vercel_project_id, vercel_team_id: $vercel_team_id, emailMessage: {To: $email, Subject: $subject, Body: $body}}')
 
 response_file=$(mktemp)
 http_code=$(curl -sS -o "$response_file" -w "%{http_code}" \

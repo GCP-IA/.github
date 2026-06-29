@@ -19,10 +19,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  security_audits:
-    name: Pruebas de Seguridad y Calidad
+  preflight:
+    name: 1. Preflight y cambios
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
+    outputs:
+      app_changed: ${{ steps.app_changes.outputs.changed }}
 
     steps:
       - name: Checkout del codigo
@@ -39,6 +41,18 @@ jobs:
         shell: bash
         run: bash .github/devsecops/scripts/detect-app-changes.sh
 
+  secrets_scan:
+    name: 2. Secretos hardcodeados
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: preflight
+
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Preparar reglas corporativas de secretos (Estricto / Multi-idioma)
         shell: bash
         run: bash .github/devsecops/scripts/prepare-gitleaks-config.sh
@@ -53,6 +67,18 @@ jobs:
             -w /repo \
             ghcr.io/gitleaks/gitleaks:v8.24.2 \
             git . --config .gitleaks-ci.toml --redact --verbose --exit-code 1
+
+  sast_scan:
+    name: 3. SAST Semgrep
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: secrets_scan
+
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Configurar Python para Semgrep
         uses: actions/setup-python@v5
@@ -73,6 +99,18 @@ jobs:
             --error \
             --metrics=off
 
+  node_quality:
+    name: 4. Node.js SCA y calidad
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: sast_scan
+
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
@@ -90,17 +128,51 @@ jobs:
         shell: bash
         run: bash .github/devsecops/scripts/detect-unused-deps.sh
 
-      - name: Rollback automatico
-        if: failure() && github.event_name == 'push'
+  rollback:
+    name: 5. Rollback automatico
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - preflight
+      - secrets_scan
+      - sast_scan
+      - node_quality
+    if: ${{ always() && github.event_name == 'push' && contains(join(needs.*.result, ','), 'failure') }}
+
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rollback automatico en main
         shell: bash
         env:
           SHA_TO_REVERT: ${{ github.sha }}
           REF_NAME: ${{ github.ref_name }}
         run: bash .github/devsecops/scripts/rollback.sh
 
+  vercel_provision:
+    name: 6. Vercel proyecto
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - preflight
+      - node_quality
+    if: ${{ success() && github.event_name == 'push' && needs.preflight.outputs.app_changed == 'true' }}
+    outputs:
+      project_id: ${{ steps.vercel_provisioning.outputs.project_id }}
+      project_name: ${{ steps.vercel_provisioning.outputs.project_name }}
+      team_id: ${{ steps.vercel_provisioning.outputs.team_id }}
+
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Auto-Aprovisionamiento en Vercel (API)
         id: vercel_provisioning
-        if: success() && github.event_name == 'push' && steps.app_changes.outputs.changed == 'true'
         shell: bash
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN || secrets.VERCEL_TOKEN_SECRET }}
@@ -108,28 +180,134 @@ jobs:
           REPO_NAME: ${{ github.event.repository.name }}
         run: bash .github/devsecops/scripts/vercel-provision.sh
 
+  edge_firewall:
+    name: 7. Firewall perimetral
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: vercel_provision
+    if: ${{ success() && github.event_name == 'push' && needs.vercel_provision.outputs.project_id != '' }}
+    outputs:
+      middleware_generated: ${{ steps.edge_firewall.outputs.middleware_generated }}
+
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Inyectar Edge Firewall corporativo
-        if: success() && github.event_name == 'push' && steps.app_changes.outputs.changed == 'true'
+        id: edge_firewall
         shell: bash
         run: bash .github/devsecops/scripts/inject-edge-firewall.sh
 
+      - name: Guardar middleware generado
+        if: ${{ steps.edge_firewall.outputs.middleware_generated == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcp-td-generated-middleware
+          path: middleware.js
+          if-no-files-found: error
+          retention-days: 1
+
+  vercel_deploy:
+    name: 8. Deploy Vercel produccion
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs:
+      - vercel_provision
+      - edge_firewall
+    if: ${{ success() && github.event_name == 'push' && needs.vercel_provision.outputs.project_id != '' }}
+    outputs:
+      deployment_url: ${{ steps.vercel_deploy.outputs.deployment_url }}
+
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restaurar middleware generado
+        if: ${{ needs.edge_firewall.outputs.middleware_generated == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: gcp-td-generated-middleware
+          path: .
+
       - name: Despliegue en Vercel (Produccion)
-        if: success() && github.event_name == 'push' && steps.app_changes.outputs.changed == 'true'
+        id: vercel_deploy
         shell: bash
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN || secrets.VERCEL_TOKEN_SECRET }}
-          RESOLVED_PROJECT_ID: ${{ steps.vercel_provisioning.outputs.project_id }}
-          VERCEL_TEAM_ID: ${{ steps.vercel_provisioning.outputs.team_id }}
+          RESOLVED_PROJECT_ID: ${{ needs.vercel_provision.outputs.project_id }}
+          VERCEL_TEAM_ID: ${{ needs.vercel_provision.outputs.team_id }}
         run: bash .github/devsecops/scripts/vercel-deploy.sh
 
-      - name: Alertar a Ciberseguridad si falla el workflow
-        if: always() && failure()
+  notify_success:
+    name: 9. Notificar exito
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - vercel_provision
+      - vercel_deploy
+    if: ${{ success() && github.event_name == 'push' && needs.vercel_deploy.outputs.deployment_url != '' }}
+
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enviar alerta de exito
         shell: bash
         env:
           SECURITY_ALERT_WEBHOOK_URL: ${{ secrets.SECURITY_ALERT_WEBHOOK_URL }}
+          ALERT_TYPE: success
+          ALERT_STATUS: Exitoso
           ALERT_REPOSITORY: ${{ github.repository }}
           ALERT_ACTOR: ${{ github.actor }}
           ALERT_WORKFLOW: ${{ github.workflow }}
           ALERT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           ALERT_REF: ${{ github.ref }}
+          VERCEL_DEPLOYMENT_URL: ${{ needs.vercel_deploy.outputs.deployment_url }}
+          VERCEL_PROJECT_NAME: ${{ needs.vercel_provision.outputs.project_name }}
+          VERCEL_PROJECT_ID: ${{ needs.vercel_provision.outputs.project_id }}
+          VERCEL_TEAM_ID: ${{ needs.vercel_provision.outputs.team_id }}
+        run: bash .github/devsecops/scripts/send-alert.sh
+
+  notify_failure:
+    name: 10. Notificar error
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - preflight
+      - secrets_scan
+      - sast_scan
+      - node_quality
+      - rollback
+      - vercel_provision
+      - edge_firewall
+      - vercel_deploy
+    if: ${{ always() && contains(join(needs.*.result, ','), 'failure') }}
+
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Alertar a Ciberseguridad si falla el workflow
+        shell: bash
+        env:
+          SECURITY_ALERT_WEBHOOK_URL: ${{ secrets.SECURITY_ALERT_WEBHOOK_URL }}
+          ALERT_TYPE: error
+          ALERT_STATUS: Fallido
+          ALERT_REPOSITORY: ${{ github.repository }}
+          ALERT_ACTOR: ${{ github.actor }}
+          ALERT_WORKFLOW: ${{ github.workflow }}
+          ALERT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ALERT_REF: ${{ github.ref }}
+          VERCEL_DEPLOYMENT_URL: ${{ needs.vercel_deploy.outputs.deployment_url }}
+          VERCEL_PROJECT_NAME: ${{ needs.vercel_provision.outputs.project_name }}
+          VERCEL_PROJECT_ID: ${{ needs.vercel_provision.outputs.project_id }}
+          VERCEL_TEAM_ID: ${{ needs.vercel_provision.outputs.team_id }}
         run: bash .github/devsecops/scripts/send-alert.sh

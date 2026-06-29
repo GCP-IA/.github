@@ -68,4 +68,5 @@ else
 fi
 
 echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+echo "project_name=$PROJECT_NAME" >> "$GITHUB_OUTPUT"
 echo "team_id=$VERCEL_TEAM_ID" >> "$GITHUB_OUTPUT"

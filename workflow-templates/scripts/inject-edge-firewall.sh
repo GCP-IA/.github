@@ -3,6 +3,7 @@ set -euo pipefail
 
 if [ -f "middleware.js" ] || [ -f "middleware.ts" ]; then
   echo "::notice::Middleware personalizado detectado. Se respeta el archivo existente y no se inyecta firewall."
+  echo "middleware_generated=false" >> "$GITHUB_OUTPUT"
   exit 0
 fi
 
@@ -85,3 +86,5 @@ export const config = {
 EOF
 
 echo "::notice::Edge Firewall corporativo inyectado en middleware.js."
+echo "middleware_generated=true" >> "$GITHUB_OUTPUT"
+echo "middleware_path=middleware.js" >> "$GITHUB_OUTPUT"

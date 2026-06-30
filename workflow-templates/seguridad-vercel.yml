@@ -213,7 +213,7 @@ jobs:
   vercel_deploy:
     name: 8. Deploy Vercel produccion
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     needs:
       - vercel_provision
       - edge_firewall
@@ -292,7 +292,7 @@ jobs:
       - vercel_provision
       - edge_firewall
       - vercel_deploy
-    if: ${{ always() && contains(join(needs.*.result, ','), 'failure') }}
+    if: ${{ always() && (contains(join(needs.*.result, ','), 'failure') || contains(join(needs.*.result, ','), 'cancelled')) }}
 
     steps:
       - name: Checkout del codigo

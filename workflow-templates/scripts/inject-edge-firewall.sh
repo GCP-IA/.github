@@ -7,12 +7,18 @@ if [ -f "middleware.js" ] || [ -f "middleware.ts" ]; then
   exit 0
 fi
 
-cat > middleware.js <<'EOF'
-const CORPORATE_CIDRS = [
-  '181.119.102.240/29',
-  '186.33.30.96/27',
-  '186.1.47.96/27',
-];
+if [ -z "${ALLOWED_CIDRS:-}" ]; then
+  echo "::error::La variable ALLOWED_CIDRS no está definida o está vacía. Configúrala en GitHub Variables."
+  exit 1
+fi
+
+cat > middleware.js <<EOF
+// IPs corporativas inyectadas dinámicamente por GitHub Actions
+const CORPORATE_CIDRS_STRING = "${ALLOWED_CIDRS}";
+const CORPORATE_CIDRS = CORPORATE_CIDRS_STRING.split(',').map(ip => ip.trim());
+EOF
+
+cat >> middleware.js <<'EOF'
 
 function ipToLong(ip) {
   const cleanIp = String(ip || '').split(',')[0].trim();
@@ -70,14 +76,30 @@ export default function middleware(request) {
   }
 
   return new Response(
-    JSON.stringify({
-      error: 'Security Gate: Acceso Denegado',
-      message: 'Este sistema es de uso exclusivo para la red corporativa de Grupo Casa Pellas.',
-    }),
+    `<!DOCTYPE html>
+    <html lang="es">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Acceso Denegado</title>
+      <style>
+        body { font-family: system-ui, sans-serif; background-color: #f3f4f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background-color: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
+        h1 { color: #dc2626; font-size: 1.5rem; margin-bottom: 1rem; }
+        p { color: #4b5563; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>Security Gate: Acceso Denegado</h1>
+        <p>Este sistema es de uso exclusivo para la red corporativa de Grupo Casa Pellas.</p>
+      </div>
+    </body>
+    </html>`,
     {
       status: 403,
       headers: {
-        'content-type': 'application/json; charset=utf-8',
+        'content-type': 'text/html; charset=utf-8',
       },
     }
   );

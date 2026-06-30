@@ -30,26 +30,43 @@ jq -n \
 commit_author_name=$(git show -s --format=%an HEAD 2>/dev/null || true)
 commit_author_email=$(git show -s --format=%ae HEAD 2>/dev/null || true)
 commit_sha=$(git rev-parse HEAD 2>/dev/null || true)
-deploy_log=$(mktemp)
+pull_log=$(mktemp)
+build_log=$(mktemp)
+deploy_stdout=$(mktemp)
+deploy_stderr=$(mktemp)
+
+echo "::group::Vercel pull"
+npx --yes vercel@latest pull --yes --environment=production --token "$VERCEL_TOKEN" 2>&1 | tee "$pull_log"
+echo "::endgroup::"
+
+echo "::group::Vercel build"
+npx --yes vercel@latest build --prod --token "$VERCEL_TOKEN" 2>&1 | tee "$build_log"
+echo "::endgroup::"
+
+echo "::group::Vercel deploy prebuilt"
 set +e
-npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN" \
+npx --yes vercel@latest deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN" \
   --meta "githubCommitSha=$commit_sha" \
   --meta "githubCommitAuthorName=$commit_author_name" \
-  --meta "githubCommitAuthorEmail=$commit_author_email" 2>&1 | tee "$deploy_log"
-deploy_code=${PIPESTATUS[0]}
+  --meta "githubCommitAuthorEmail=$commit_author_email" \
+  >"$deploy_stdout" 2>"$deploy_stderr"
+deploy_code=$?
 set -e
+cat "$deploy_stderr" >&2
+cat "$deploy_stdout"
+echo "::endgroup::"
 
-deployment_url=$(grep -Eo 'https://[^[:space:]]+\.vercel\.app' "$deploy_log" | tail -n 1 || true)
+deployment_url=$(grep -Eo 'https://[^[:space:]]+\.vercel\.app' "$deploy_stdout" | tail -n 1 || true)
 
 if [ -n "$deployment_url" ]; then
   echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
 fi
 
 if [ "$deploy_code" -ne 0 ]; then
-  if grep -qi "permission to create a Production Deployment" "$deploy_log"; then
+  if grep -qi "permission to create a Production Deployment" "$deploy_stderr"; then
     echo "::error::Vercel rechazo el despliegue de produccion. El token configurado no tiene permiso para crear Production Deployments en este proyecto/team."
   fi
-  if grep -qi "commit email" "$deploy_log"; then
+  if grep -qi "commit email" "$deploy_stderr"; then
     echo "::error::Vercel bloqueo el deployment porque el email del commit no coincide con una cuenta GitHub. Corrige git config user.email usando un email verificado de GitHub y vuelve a publicar."
   fi
   exit "$deploy_code"

@@ -18,6 +18,10 @@ fi
 
 wait_seconds="${VERCEL_DEPLOY_WAIT_SECONDS:-600}"
 poll_interval="${VERCEL_DEPLOY_POLL_INTERVAL_SECONDS:-10}"
+resolved_project_name="${RESOLVED_PROJECT_NAME:-}"
+
+echo "project_id=$RESOLVED_PROJECT_ID" >> "$GITHUB_OUTPUT"
+echo "project_name=$resolved_project_name" >> "$GITHUB_OUTPUT"
 
 mkdir -p .vercel
 jq -n \
@@ -37,7 +41,13 @@ npx --yes vercel@latest deploy --prod --yes --no-wait --token "$VERCEL_TOKEN" \
 deploy_code=${PIPESTATUS[0]}
 set -e
 
-deployment_url=$(grep -Eo 'https://[^[:space:]]+\.vercel\.app[^[:space:]]*' "$deploy_log" | tail -n 1 || true)
+deployment_url=$(grep -Eo 'https://[^[:space:]]+\.vercel\.app' "$deploy_log" | tail -n 1 || true)
+inspect_url=$(grep -Eo 'https://vercel\.com/[^[:space:]]+' "$deploy_log" | tail -n 1 || true)
+deployment_lookup=""
+
+if [ -n "$deployment_url" ]; then
+  echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
+fi
 
 if [ "$deploy_code" -ne 0 ]; then
   if grep -qi "permission to create a Production Deployment" "$deploy_log"; then
@@ -57,6 +67,12 @@ fi
 deployment_host="${deployment_url#https://}"
 deployment_host="${deployment_host#http://}"
 deployment_host="${deployment_host%%/*}"
+if [ -n "$inspect_url" ]; then
+  deployment_lookup="${inspect_url##*/}"
+fi
+if [ -z "$deployment_lookup" ]; then
+  deployment_lookup="$deployment_host"
+fi
 
 echo "::notice::Deployment creado en Vercel. Esperando estado READY: $deployment_url"
 
@@ -65,7 +81,14 @@ while [ "$elapsed" -le "$wait_seconds" ]; do
   deployment_response=$(mktemp)
   http_code=$(curl -sS -o "$deployment_response" -w "%{http_code}" \
     -H "Authorization: Bearer $VERCEL_TOKEN" \
-    "https://api.vercel.com/v13/deployments/$deployment_host?teamId=$VERCEL_TEAM_ID")
+    "https://api.vercel.com/v13/deployments/$deployment_lookup?teamId=$VERCEL_TEAM_ID")
+
+  if [ "$http_code" = "404" ]; then
+    echo "Deployment aun no indexado en Vercel API; reintentando..."
+    sleep "$poll_interval"
+    elapsed=$((elapsed + poll_interval))
+    continue
+  fi
 
   if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
     echo "::error::No se pudo consultar el estado del deployment en Vercel. HTTP $http_code"
@@ -74,6 +97,7 @@ while [ "$elapsed" -le "$wait_seconds" ]; do
   fi
 
   deployment_state=$(jq -r '.readyState // .state // .status // empty' "$deployment_response")
+  deployment_state=$(printf '%s' "$deployment_state" | tr '[:lower:]' '[:upper:]')
   deployment_ready_substate=$(jq -r '.readySubstate // empty' "$deployment_response")
   echo "Estado Vercel: ${deployment_state:-desconocido} ${deployment_ready_substate:+($deployment_ready_substate)}"
 

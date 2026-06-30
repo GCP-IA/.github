@@ -65,7 +65,7 @@ if [ "$alert_type" = "success" ]; then
   body="El workflow DevSecOps finalizo correctamente en $ALERT_REPOSITORY. Proyecto Vercel: $vercel_project_name ($vercel_project_id). URL: $vercel_deployment_url. Run: $ALERT_RUN_URL"
 else
   subject="Alerta DevSecOps: fallo en $ALERT_REPOSITORY"
-  body="El workflow DevSecOps fallo en $ALERT_REPOSITORY. Run: $ALERT_RUN_URL"
+  body="El workflow DevSecOps fallo en $ALERT_REPOSITORY. Proyecto Vercel: $vercel_project_name ($vercel_project_id). URL: $vercel_deployment_url. Run: $ALERT_RUN_URL"
 fi
 
 payload=$(jq -n \

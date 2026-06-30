@@ -218,6 +218,8 @@ jobs:
     if: ${{ success() && github.event_name == 'push' && needs.vercel_provision.outputs.project_id != '' }}
     outputs:
       deployment_url: ${{ steps.vercel_deploy.outputs.deployment_url }}
+      project_id: ${{ steps.vercel_deploy.outputs.project_id }}
+      project_name: ${{ steps.vercel_deploy.outputs.project_name }}
 
     steps:
       - name: Checkout del codigo
@@ -238,6 +240,7 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN || secrets.VERCEL_TOKEN_SECRET }}
           RESOLVED_PROJECT_ID: ${{ needs.vercel_provision.outputs.project_id }}
+          RESOLVED_PROJECT_NAME: ${{ needs.vercel_provision.outputs.project_name }}
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID || secrets.VERCEL_ORG_ID }}
         run: bash .github/devsecops/scripts/vercel-deploy.sh
 
@@ -248,7 +251,7 @@ jobs:
     needs:
       - vercel_provision
       - vercel_deploy
-    if: ${{ success() && github.event_name == 'push' && needs.vercel_deploy.outputs.deployment_url != '' }}
+    if: ${{ success() && github.event_name == 'push' && needs.vercel_deploy.result == 'success' && needs.vercel_provision.outputs.project_id != '' && needs.vercel_deploy.outputs.deployment_url != '' }}
 
     steps:
       - name: Checkout del codigo
@@ -269,8 +272,8 @@ jobs:
           ALERT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           ALERT_REF: ${{ github.ref }}
           VERCEL_DEPLOYMENT_URL: ${{ needs.vercel_deploy.outputs.deployment_url }}
-          VERCEL_PROJECT_NAME: ${{ needs.vercel_provision.outputs.project_name }}
-          VERCEL_PROJECT_ID: ${{ needs.vercel_provision.outputs.project_id }}
+          VERCEL_PROJECT_NAME: ${{ needs.vercel_deploy.outputs.project_name || needs.vercel_provision.outputs.project_name }}
+          VERCEL_PROJECT_ID: ${{ needs.vercel_deploy.outputs.project_id || needs.vercel_provision.outputs.project_id }}
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID || secrets.VERCEL_ORG_ID }}
         run: bash .github/devsecops/scripts/send-alert.sh
 
@@ -308,7 +311,7 @@ jobs:
           ALERT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           ALERT_REF: ${{ github.ref }}
           VERCEL_DEPLOYMENT_URL: ${{ needs.vercel_deploy.outputs.deployment_url }}
-          VERCEL_PROJECT_NAME: ${{ needs.vercel_provision.outputs.project_name }}
-          VERCEL_PROJECT_ID: ${{ needs.vercel_provision.outputs.project_id }}
+          VERCEL_PROJECT_NAME: ${{ needs.vercel_deploy.outputs.project_name || needs.vercel_provision.outputs.project_name }}
+          VERCEL_PROJECT_ID: ${{ needs.vercel_deploy.outputs.project_id || needs.vercel_provision.outputs.project_id }}
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID || secrets.VERCEL_ORG_ID }}
         run: bash .github/devsecops/scripts/send-alert.sh

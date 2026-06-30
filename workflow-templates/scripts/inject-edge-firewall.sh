@@ -7,9 +7,11 @@ if [ -f "middleware.js" ] || [ -f "middleware.ts" ]; then
   exit 0
 fi
 
+DEFAULT_CORPORATE_ALLOWED_IPS="181.154.102.240/29,186.33.62.96/27,186.185.47.96/27"
+
 if [ -z "${ALLOWED_CIDRS:-}" ]; then
-  echo "::error::No se recibieron CIDR corporativos. Configura CORPORATE_ALLOWED_IPS en GitHub Actions Variables o Secrets. ALLOWED_CIDRS queda soportado solo como alias legacy."
-  exit 1
+  ALLOWED_CIDRS="$DEFAULT_CORPORATE_ALLOWED_IPS"
+  echo "::warning::No se recibieron CIDR desde GitHub Actions. Usando fallback corporativo embebido. Configura CORPORATE_ALLOWED_IPS para administrar estos rangos sin cambiar el workflow."
 fi
 
 cat > middleware.js <<EOF

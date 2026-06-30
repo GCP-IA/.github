@@ -35,6 +35,19 @@ build_log=$(mktemp)
 deploy_stdout=$(mktemp)
 deploy_stderr=$(mktemp)
 
+if [ -f package.json ] && grep -q '"packageManager"[[:space:]]*:[[:space:]]*"pnpm@' package.json; then
+  pnpm_version=$(node -e "const pkg=require('./package.json'); const pm=pkg.packageManager || ''; console.log(pm.startsWith('pnpm@') ? pm.slice(5) : 'latest')")
+
+  echo "::group::Preparar pnpm"
+  echo "Proyecto pnpm detectado. Activando pnpm@$pnpm_version para Vercel build..."
+  corepack enable || true
+  if ! corepack prepare "pnpm@$pnpm_version" --activate; then
+    npm install -g "pnpm@$pnpm_version"
+  fi
+  pnpm --version
+  echo "::endgroup::"
+fi
+
 echo "::group::Vercel pull"
 npx --yes vercel@latest pull --yes --environment=production --token "$VERCEL_TOKEN" 2>&1 | tee "$pull_log"
 echo "::endgroup::"

@@ -1,6 +1,6 @@
 {
   "plugin": "gcp-td-github",
-  "display_name": "GCP IA GitHub V1.0.0",
+  "display_name": "GCP-TD DevSecOps Publisher V1.0.0",
   "display_version": "V1.0.0",
   "manifest_version": "1.0.0+codex.20260630160443",
   "workflow_source": "GCP-TD/.github",

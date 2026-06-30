@@ -8,12 +8,12 @@ if [ -f "middleware.js" ] || [ -f "middleware.ts" ]; then
 fi
 
 if [ -z "${ALLOWED_CIDRS:-}" ]; then
-  echo "::error::La variable ALLOWED_CIDRS no está definida o está vacía. Configúrala en GitHub Variables."
+  echo "::error::No se recibieron CIDR corporativos. Configura CORPORATE_ALLOWED_IPS en GitHub Actions Variables o Secrets. ALLOWED_CIDRS queda soportado solo como alias legacy."
   exit 1
 fi
 
 cat > middleware.js <<EOF
-// IPs corporativas inyectadas dinámicamente por GitHub Actions
+// IPs corporativas inyectadas dinamicamente por GitHub Actions
 const CORPORATE_CIDRS_STRING = "${ALLOWED_CIDRS}";
 const CORPORATE_CIDRS = CORPORATE_CIDRS_STRING.split(',').map(ip => ip.trim());
 EOF

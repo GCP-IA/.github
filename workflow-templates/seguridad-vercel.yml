@@ -197,6 +197,8 @@ jobs:
       - name: Inyectar Edge Firewall corporativo
         id: edge_firewall
         shell: bash
+        env:
+          ALLOWED_CIDRS: ${{ vars.CORPORATE_ALLOWED_IPS || secrets.CORPORATE_ALLOWED_IPS || vars.ALLOWED_CIDRS || secrets.ALLOWED_CIDRS }}
         run: bash .github/devsecops/scripts/inject-edge-firewall.sh
 
       - name: Guardar middleware generado

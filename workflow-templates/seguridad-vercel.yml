@@ -96,6 +96,10 @@ jobs:
             --config p/secrets \
             --config p/javascript \
             --config p/nodejs \
+            --exclude ".github/**" \
+            --exclude "node_modules/**" \
+            --exclude "dist/**" \
+            --exclude ".vercel/**" \
             --error \
             --metrics=off
 

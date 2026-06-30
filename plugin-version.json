@@ -1,0 +1,13 @@
+{
+  "plugin": "gcp-td-github",
+  "display_name": "GCP IA GitHub V1.0.0",
+  "display_version": "V1.0.0",
+  "manifest_version": "1.0.0+codex.20260630160443",
+  "workflow_source": "GCP-TD/.github",
+  "workflow_template": "workflow-templates/seguridad-vercel.yml",
+  "release_notes": [
+    "Centralized workflow and DevSecOps scripts are downloaded from GCP-TD/.github.",
+    "Vercel project metadata is preserved in success and error webhooks.",
+    "Plugin UI now shows the visible release version."
+  ]
+}

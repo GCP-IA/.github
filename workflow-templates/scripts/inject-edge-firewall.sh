@@ -94,7 +94,7 @@ export default function middleware(request) {
     <body>
       <div class="container">
         <h1>Security Gate: Acceso Denegado</h1>
-        <p>Este sistema es de uso exclusivo para la red corporativa de Grupo Casa Pellas.</p>
+        <p>404</p>
       </div>
     </body>
     </html>`,

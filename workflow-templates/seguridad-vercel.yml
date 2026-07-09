@@ -209,7 +209,7 @@ jobs:
         if: ${{ steps.edge_firewall.outputs.middleware_generated == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: gcp-td-generated-middleware
+          name: gcp-ia-generated-middleware
           path: middleware.js
           if-no-files-found: error
           retention-days: 1
@@ -237,7 +237,7 @@ jobs:
         if: ${{ needs.edge_firewall.outputs.middleware_generated == 'true' }}
         uses: actions/download-artifact@v4
         with:
-          name: gcp-td-generated-middleware
+          name: gcp-ia-generated-middleware
           path: .
 
       - name: Despliegue en Vercel (Produccion)

@@ -1,12 +1,12 @@
 {
   "plugin": "gcp-td-github",
-  "display_name": "GCP-TD DevSecOps Publisher V1.0.0",
-  "display_version": "V1.0.0",
-  "manifest_version": "1.0.0+codex.20260630160443",
-  "workflow_source": "GCP-TD/.github",
+  "display_name": "GCP-IA DevSecOps Publisher V1.0.1",
+  "display_version": "V1.0.1",
+  "manifest_version": "1.0.1+codex.20260709111742",
+  "workflow_source": "GCP-IA/.github",
   "workflow_template": "workflow-templates/seguridad-vercel.yml",
   "release_notes": [
-    "Centralized workflow and DevSecOps scripts are downloaded from GCP-TD/.github.",
+    "Centralized workflow and DevSecOps scripts are downloaded from GCP-IA/.github.",
     "Vercel project metadata is preserved in success and error webhooks.",
     "Plugin UI now shows the visible release version."
   ]

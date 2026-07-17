@@ -69,10 +69,11 @@ cat "$deploy_stderr" >&2
 cat "$deploy_stdout"
 echo "::endgroup::"
 
-deployment_url=$(grep -Eo 'https://[^[:space:]]+\.vercel\.app' "$deploy_stdout" | tail -n 1 || true)
+raw_deployment_url=$(grep -Eo 'https://[^[:space:]]+\.vercel\.app' "$deploy_stdout" | tail -n 1 || true)
+deployment_url="$raw_deployment_url"
 
-if [ -n "$deployment_url" ]; then
-  echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
+if [ -n "$raw_deployment_url" ]; then
+  echo "raw_deployment_url=$raw_deployment_url" >> "$GITHUB_OUTPUT"
 fi
 
 if [ "$deploy_code" -ne 0 ]; then
@@ -85,9 +86,47 @@ if [ "$deploy_code" -ne 0 ]; then
   exit "$deploy_code"
 fi
 
-if [ -z "$deployment_url" ]; then
+if [ -z "$raw_deployment_url" ]; then
   echo "::error::Vercel acepto el deploy, pero no se pudo extraer la URL publica desde la salida de Vercel CLI."
   exit 1
+fi
+
+domains_response=$(mktemp)
+domains_code=$(curl -sS -o "$domains_response" -w "%{http_code}" -G \
+  -H "Authorization: Bearer $VERCEL_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data-urlencode "production=true" \
+  --data-urlencode "redirects=false" \
+  --data-urlencode "limit=100" \
+  --data-urlencode "teamId=$VERCEL_TEAM_ID" \
+  "https://api.vercel.com/v9/projects/$RESOLVED_PROJECT_ID/domains" || true)
+
+if [ "$domains_code" = "200" ]; then
+  stable_domain=$(jq -r --arg preferred "${resolved_project_name}.vercel.app" '
+    [.domains[]? | select((.redirect // "") == "")] as $domains |
+    (([$domains[] | select(.name == $preferred)][0].name) //
+     ([$domains[] | select(.name | endswith(".vercel.app"))][0].name) //
+     ([$domains[] | select((.verified == true) or (.verified == "true"))][0].name) //
+     ($domains[0].name) //
+     empty)
+  ' "$domains_response")
+
+  if [ -n "$stable_domain" ]; then
+    deployment_url="https://$stable_domain"
+  elif [ -n "$resolved_project_name" ]; then
+    deployment_url="https://${resolved_project_name}.vercel.app"
+    echo "::warning::Vercel API no devolvio dominios; se usara el dominio canonico del proyecto."
+  else
+    echo "::warning::Vercel no devolvio dominios de produccion para el proyecto; se usara la URL del deployment."
+  fi
+else
+  if [ -n "$resolved_project_name" ]; then
+    deployment_url="https://${resolved_project_name}.vercel.app"
+    echo "::warning::No se pudieron consultar dominios de produccion en Vercel API. HTTP $domains_code; se usara el dominio canonico del proyecto."
+  else
+    echo "::warning::No se pudieron consultar dominios de produccion en Vercel API. HTTP $domains_code; se usara la URL del deployment."
+  fi
+  cat "$domains_response" || true
 fi
 
 echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"

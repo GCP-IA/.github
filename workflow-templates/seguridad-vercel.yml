@@ -1,5 +1,7 @@
 name: Corporate DevSecOps Gate
 
+run-name: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'redeploy-environment' && format('Env redeploy · {0} · {1}', inputs.vercel_project_name, inputs.request_id) || github.event.head_commit.message || github.workflow }}
+
 on:
   push:
     branches:
@@ -10,12 +12,33 @@ on:
       - main
       - master
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Operacion manual autorizada
+        required: true
+        default: security-scan
+        type: choice
+        options:
+          - security-scan
+          - redeploy-environment
+      vercel_project_id:
+        description: Project ID de Vercel para redeploy
+        required: false
+        type: string
+      vercel_project_name:
+        description: Nombre exacto del proyecto y repositorio
+        required: false
+        type: string
+      request_id:
+        description: Identificador de correlacion generado por la consola
+        required: false
+        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: security-gate-${{ github.ref }}
+  group: security-gate-${{ github.ref }}-${{ github.event_name }}-${{ inputs.operation || 'code' }}
   cancel-in-progress: true
 
 jobs:
@@ -23,6 +46,7 @@ jobs:
     name: 1. Preflight y cambios
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.operation != 'redeploy-environment' }}
     outputs:
       app_changed: ${{ steps.app_changes.outputs.changed }}
 
@@ -209,7 +233,7 @@ jobs:
         if: ${{ steps.edge_firewall.outputs.middleware_generated == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: gcp-ia-generated-middleware
+          name: corporate-generated-middleware
           path: middleware.js
           if-no-files-found: error
           retention-days: 1
@@ -237,7 +261,7 @@ jobs:
         if: ${{ needs.edge_firewall.outputs.middleware_generated == 'true' }}
         uses: actions/download-artifact@v4
         with:
-          name: gcp-ia-generated-middleware
+          name: corporate-generated-middleware
           path: .
 
       - name: Despliegue en Vercel (Produccion)
@@ -249,6 +273,102 @@ jobs:
           RESOLVED_PROJECT_NAME: ${{ needs.vercel_provision.outputs.project_name }}
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID || secrets.VERCEL_ORG_ID }}
         run: bash .github/devsecops/scripts/vercel-deploy.sh
+
+  env_redeploy:
+    name: Redeploy por variables de entorno
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'redeploy-environment' }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Validar solicitud de redeploy
+        shell: bash
+        env:
+          REQUEST_ID: ${{ inputs.request_id }}
+          RESOLVED_PROJECT_ID: ${{ inputs.vercel_project_id }}
+          RESOLVED_PROJECT_NAME: ${{ inputs.vercel_project_name }}
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$REQUEST_ID" =~ ^[a-f0-9]{32}$ ]]; then
+            echo "::error::request_id invalido."
+            exit 1
+          fi
+          if [[ ! "$RESOLVED_PROJECT_ID" =~ ^prj_[A-Za-z0-9]+$ ]]; then
+            echo "::error::vercel_project_id invalido."
+            exit 1
+          fi
+          if [[ ! "$RESOLVED_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9._-]{0,99}$ ]]; then
+            echo "::error::vercel_project_name invalido."
+            exit 1
+          fi
+          normalized_project=$(printf '%s' "$RESOLVED_PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//; s/-+/-/g')
+          normalized_repository=$(printf '%s' "$REPOSITORY_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//; s/-+/-/g')
+          if [ "$normalized_project" != "$normalized_repository" ]; then
+            echo "::error::El proyecto Vercel no corresponde a este repositorio."
+            exit 1
+          fi
+
+      - name: Checkout de la rama principal
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Inyectar Edge Firewall corporativo
+        id: env_redeploy_firewall
+        shell: bash
+        env:
+          ALLOWED_CIDRS: ${{ vars.CORPORATE_ALLOWED_IPS || secrets.CORPORATE_ALLOWED_IPS || vars.ALLOWED_CIDRS || secrets.ALLOWED_CIDRS }}
+        run: bash .github/devsecops/scripts/inject-edge-firewall.sh
+
+      - name: Pull, build y deploy de Production
+        id: env_redeploy_deploy
+        shell: bash
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN || secrets.VERCEL_TOKEN_SECRET }}
+          RESOLVED_PROJECT_ID: ${{ inputs.vercel_project_id }}
+          RESOLVED_PROJECT_NAME: ${{ inputs.vercel_project_name }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID || secrets.VERCEL_ORG_ID }}
+        run: bash .github/devsecops/scripts/vercel-deploy.sh
+
+      - name: Notificar redeploy exitoso
+        if: ${{ success() }}
+        shell: bash
+        env:
+          SECURITY_ALERT_WEBHOOK_URL: ${{ secrets.SECURITY_ALERT_WEBHOOK_URL }}
+          SECURITY_ALERT_DEFAULT_TO: ${{ secrets.SECURITY_ALERT_DEFAULT_TO || vars.SECURITY_ALERT_DEFAULT_TO }}
+          ALERT_TYPE: success
+          ALERT_STATUS: Exitoso
+          ALERT_REPOSITORY: ${{ github.repository }}
+          ALERT_ACTOR: ${{ github.actor }}
+          ALERT_WORKFLOW: ${{ github.workflow }}
+          ALERT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ALERT_REF: ${{ github.ref }}
+          VERCEL_DEPLOYMENT_URL: ${{ steps.env_redeploy_deploy.outputs.deployment_url }}
+          VERCEL_PROJECT_NAME: ${{ inputs.vercel_project_name }}
+          VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID || secrets.VERCEL_ORG_ID }}
+        run: bash .github/devsecops/scripts/send-alert.sh
+
+      - name: Notificar redeploy fallido
+        if: ${{ failure() }}
+        shell: bash
+        env:
+          SECURITY_ALERT_WEBHOOK_URL: ${{ secrets.SECURITY_ALERT_WEBHOOK_URL }}
+          SECURITY_ALERT_DEFAULT_TO: ${{ secrets.SECURITY_ALERT_DEFAULT_TO || vars.SECURITY_ALERT_DEFAULT_TO }}
+          ALERT_TYPE: error
+          ALERT_STATUS: Fallido
+          ALERT_REPOSITORY: ${{ github.repository }}
+          ALERT_ACTOR: ${{ github.actor }}
+          ALERT_WORKFLOW: ${{ github.workflow }}
+          ALERT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ALERT_REF: ${{ github.ref }}
+          VERCEL_PROJECT_NAME: ${{ inputs.vercel_project_name }}
+          VERCEL_PROJECT_ID: ${{ inputs.vercel_project_id }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID || secrets.VERCEL_ORG_ID }}
+        run: bash .github/devsecops/scripts/send-alert.sh
 
   notify_success:
     name: 9. Notificar exito

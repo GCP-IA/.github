@@ -283,6 +283,11 @@ jobs:
       contents: read
 
     steps:
+      - name: Checkout de la rama principal
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Validar solicitud de redeploy
         shell: bash
         env:
@@ -333,11 +338,6 @@ jobs:
             echo "::error::El Project ID no pertenece al nombre de proyecto solicitado."
             exit 1
           fi
-
-      - name: Checkout de la rama principal
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Inyectar Edge Firewall corporativo
         id: env_redeploy_firewall
